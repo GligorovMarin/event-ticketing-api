@@ -1,0 +1,65 @@
+# docker-compose.yml
+#
+# The two containers that make up the local environment:
+#   1. db  -> PostgreSQL, where all ticketing data lives
+#   2. api -> the Spring Boot application (built from ./Dockerfile)
+#
+# Start everything:        docker compose up -d --build
+# Unit tests only:         docker compose run --rm api mvn -B test
+# Unit + integration:      docker compose run --rm api mvn -B verify
+#
+# NOTE: the credentials below are for LOCAL DEVELOPMENT ONLY. In production they come from a
+# secrets manager, never from a committed file.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ticketing
+      POSTGRES_PASSWORD: ticketing
+      POSTGRES_DB: ticketing
+    ports:
+      # host:container. 5434 on your Mac avoids clashing with other databases (the clinic project uses 5433).
+      - "5434:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Runs once, when the data volume is first created: creates the separate database for tests.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketing -d ticketing"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # "db" is the service name above; Docker's internal DNS resolves it to the db container.
+      DATABASE_URL: jdbc:postgresql://db:5432/ticketing
+      DATABASE_USER: ticketing
+      DATABASE_PASSWORD: ticketing
+      # Used only by the integration tests (profile "test"), so they never touch development data.
+      TEST_DATABASE_URL: jdbc:postgresql://db:5432/ticketing_test
+      # Secret that signs login tokens (JWT). Anyone who knows it can forge a login, so in production
+      # it comes from a secrets manager. The app refuses to start without a long enough one.
+      JWT_SECRET: dev-only-secret-do-not-use-in-production-0123456789
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    volumes:
+      # Source code mounted so edits on your Mac are visible inside the container...
+      - .:/app
+      # ...but compiled output and downloaded libraries stay in Docker volumes (faster, and no
+      # Linux-built files ever land in your project folder).
+      - target:/app/target
+      - maven_repo:/root/.m2
+
+volumes:
+  db_data:
+  target:
+  maven_repo:

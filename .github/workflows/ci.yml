@@ -1,0 +1,57 @@
+# .github/workflows/ci.yml
+#
+# Continuous Integration: runs on every push to main and on every pull request, so a change that
+# breaks the tests or the build is caught before it is merged.
+#
+# It does the SAME things you do locally, through the same docker-compose.yml, so "passes on my
+# machine" and "passes in CI" mean the same thing. Only Docker is needed on the runner: Java, Maven
+# and PostgreSQL all come from containers.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this workflow only needs to read the code.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Build the API image
+        run: docker compose build api
+
+      # --wait blocks until the database's healthcheck (pg_isready in docker-compose.yml) passes.
+      - name: Start PostgreSQL
+        run: docker compose up -d --wait db
+
+      # `mvn verify` runs the unit tests (*Test, surefire) and then the integration tests
+      # (*IT, failsafe) against the real ticketing_test database.
+      - name: Unit and integration tests
+        run: docker compose run --rm api mvn -B verify
+
+      # Builds the small production image (multi-stage Dockerfile, target "prod").
+      - name: Build the production image
+        run: docker build --target prod --tag ticketing:ci .
+
+      - name: Database logs (only when something failed)
+        if: failure()
+        run: docker compose logs db
+
+      - name: Clean up
+        if: always()
+        run: docker compose down --volumes

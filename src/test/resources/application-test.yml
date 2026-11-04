@@ -1,0 +1,9 @@
+# application-test.yml: extra settings that apply ONLY when the Spring profile "test" is active
+# (the integration tests activate it with @ActiveProfiles("test"), see the IntegrationTest annotation).
+# They override application.yml.
+
+spring:
+  datasource:
+    # A separate database, created by docker/postgres-init/01-create-test-db.sql, so tests never
+    # touch development data.
+    url: ${TEST_DATABASE_URL:jdbc:postgresql://localhost:5434/ticketing_test}

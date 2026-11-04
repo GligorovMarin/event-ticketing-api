@@ -1,0 +1,46 @@
+# application.yml: the settings of the application. Spring Boot reads this file at startup.
+# "${NAME:default}" means "use the environment variable NAME, or the default if it is not set".
+# docker-compose.yml sets the environment variables for local development.
+
+spring:
+  application:
+    name: ticketing
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5434/ticketing}
+    username: ${DATABASE_USER:ticketing}
+    password: ${DATABASE_PASSWORD:ticketing}
+
+  jpa:
+    # Open-session-in-view keeps a database session open during the whole web request, hiding
+    # lazy-loading mistakes until production. Off, so such mistakes fail loudly in tests instead.
+    open-in-view: false
+    hibernate:
+      # "validate": at startup Hibernate checks that the Java entities match the tables Flyway
+      # created, and refuses to start if not. Hibernate NEVER changes the schema itself; only
+      # the migration files in db/migration do.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # Talk to the database in UTC; all moments in this project are stored as UTC instants.
+        jdbc.time_zone: UTC
+
+  # Return errors as RFC 9457 "problem details" JSON ({"title":..., "status":..., "detail":...})
+  # instead of Spring's default error page.
+  mvc:
+    problemdetails:
+      enabled: true
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only expose the health endpoint; others (env, beans, ...) could leak internals.
+        include: health
+
+springdoc:
+  swagger-ui:
+    path: /docs

@@ -1,0 +1,5 @@
+target
+.git
+.github
+*.log
+MANUAL_CHECK.md
