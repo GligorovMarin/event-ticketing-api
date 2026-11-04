@@ -15,7 +15,7 @@ import java.util.UUID;
  *
  * <p>Seats are created in bulk by {@link SeatMapService} with a JDBC batch insert (one round trip for
  * hundreds of rows), so this entity has no generated id and no public constructor: it exists to READ seats
- * (availability map) and, in a later milestone, to LOCK and update them when customers hold seats.
+ * (availability map) and to LOCK and update them when customers hold seats (order/OrderService).
  */
 @Entity
 @Table(name = "seats")
@@ -47,6 +47,18 @@ public class Seat {
     private Instant holdExpiresAt;
 
     protected Seat() {
+    }
+
+    /** Reserve this seat for an order until {@code expiresAt}. The caller holds the row lock (see SeatRepository). */
+    public void hold(UUID forOrderId, Instant expiresAt) {
+        this.status = SeatStatus.HELD;
+        this.orderId = forOrderId;
+        this.holdExpiresAt = expiresAt;
+    }
+
+    /** The seat as a ticket names it: "C7". */
+    public String label() {
+        return rowLabel + seatNumber;
     }
 
     public UUID getId() {

@@ -41,6 +41,7 @@ Two roles, both open to self-registration (`POST /auth/register` with `"role": "
 | `GET /auth/me` | | yes | yes |
 | `GET /events`, `GET /events/{id}` (published events only) | yes | | |
 | `GET /events/{id}/seats`, `GET /events/{id}/seats/suggestions` | yes | | |
+| `POST /orders`, `GET /orders`, `GET /orders/{id}` | | | own orders (customers only) |
 | `POST /events`, `POST /events/{id}/sections`, `POST /events/{id}/publish` | | | own events |
 | `GET /organizer/events`, `GET /organizer/events/{id}` (drafts included) | | | own events |
 
@@ -82,6 +83,35 @@ Sliding the window along a row is O(1) per position, so the whole search is **O(
 (a naive re-check of N seats per position would be O(S x N)). The unit tests compare it with a brute-force version
 on 2000 random seat maps.
 
+## Holding seats: how two customers can never get the same seat
+
+`POST /orders` with `{eventId, seatIds}` (max 6) holds the seats for **10 minutes** while the customer pays. The
+client sends seat ids only; prices and totals are computed on the server.
+
+1. **Lock the seat rows in a fixed order**: `SELECT ... WHERE id IN (...) ORDER BY id FOR UPDATE`. Anyone else
+   wanting one of those seats waits. Because *every* request locks in ascending id order, `[A1, A2]` against
+   `[A2, A1]` can never deadlock (a test fires 20 such pairs and, by inspecting the loser's message, proves
+   PostgreSQL's deadlock detector never had to step in).
+2. **Check availability only after the locks are held** (checking first leaves a gap for someone else).
+3. **Write order, items and held seats in one transaction.** Any failure rolls everything back, so a refused request
+   holds nothing at all.
+4. **The database backs it up:** a partial unique index allows one `PENDING` order per customer and event; foreign keys
+   and CHECK constraints tie seats to real orders; `SET LOCAL lock_timeout = '5s'` stops a request waiting forever.
+5. **Lazy expiry:** a seat whose hold ran out can be taken at once, and an order shows as `EXPIRED` the moment its
+   hold ends, with no cleanup job needed for correctness.
+
+The concurrency tests fire 8 customers at one seat, 5 orders from one customer at once, and 15 customers at 12 seats,
+then check invariants (no seat in two live orders, no orphaned holds, only `201` or `409` ever returned). They run
+against a deliberately small connection pool (5) because that is where concurrency bugs show up.
+
+### Rate limiting
+
+`POST /orders` allows **10 attempts per minute per customer** (`@RateLimited`); the 11th gets `429` with `Retry-After`.
+It is a **sliding-window log**: per user, a queue of recent request times; old ones are dropped from the front, a new one
+is added at the back, so each request costs amortised **O(1)** and memory is O(limit) per user. A fixed per-minute
+counter would allow 10 requests at 12:00:59 and 10 more at 12:01:00; the sliding window does not. Counters live in this
+server's memory (several servers would each count separately; a shared store such as Redis would fix that).
+
 ## Running the tests
 
 ```bash
@@ -105,9 +135,11 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
                                                JwtService signs tokens; JwtConfig builds the verifier Spring Security uses
                                   security/    AuthenticatedUser: what controllers receive as "the caller"
                                   user/        User entity + UserRepository (maps the users table)
+                                  order/       OrderController -> OrderService: lock seats in id order, check, hold, price
+                                               Order (optimistic @Version), OrderItem, OrderRules (limits)
+                                  ratelimit/   SlidingWindowRateLimiter, @RateLimited, the interceptor that applies it
                                   availability/ AvailabilityController -> AvailabilityService -> SeatRepository;
                                                AdjacentSeatFinder (the algorithm), SeatView (lazy expiry)
-                                  order/       OrderRules: limits shared by availability and (next) ordering
                                   event/       EventController (public + organizer writes) -> EventService
                                                -> EventRepository / SectionRepository; SeatMapService batch-inserts seats;
                                                SeatMapLayout = pure rules about rows and seat numbering
@@ -125,6 +157,6 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
 - [x] **M2** Users, JWT login, roles (Customer / Organizer), everything locked by default
 - [x] **M3** Events and seat maps (organizer builds a draft, publishes it; public browsing with paging and search)
 - [x] **M4** Seat availability (live status, lazy hold expiry) and the "find N seats together" algorithm
-- [ ] M5 Seat holds, orders and a rate limiter
+- [x] **M5** Seat holds, orders (pessimistic locking) and a sliding-window rate limiter
 - [ ] M6 Simulated payment, hold expiry, cancellation, sales report
 - [ ] M7 Final documentation

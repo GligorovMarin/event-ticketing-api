@@ -32,6 +32,15 @@ public record SeatView(UUID id, UUID sectionId, String rowLabel, int seatNumber,
         return holdHasLapsed ? SeatStatus.AVAILABLE : stored;
     }
 
+    /**
+     * Can a customer take this seat at {@code now}? True for AVAILABLE, and for a HELD seat whose hold has lapsed.
+     * Used by ordering (under the seat's row lock) so that "what the map shows" and "what can be taken" can never
+     * disagree.
+     */
+    public static boolean isTakeable(Seat seat, Instant now) {
+        return effectiveStatus(seat.getStatus(), seat.getHoldExpiresAt(), now) == SeatStatus.AVAILABLE;
+    }
+
     public boolean isAvailable() {
         return status == SeatStatus.AVAILABLE;
     }

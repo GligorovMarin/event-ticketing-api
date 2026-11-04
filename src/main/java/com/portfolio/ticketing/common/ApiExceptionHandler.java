@@ -1,6 +1,9 @@
 package com.portfolio.ticketing.common;
 
 import jakarta.validation.ConstraintViolationException;
+import com.portfolio.ticketing.ratelimit.TooManyRequestsException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -48,6 +51,29 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     ProblemDetail invalidCredentials(InvalidCredentialsException exception) {
         return problem(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    }
+
+    /** A rate limit was exceeded: 429 plus a Retry-After header telling the client how many seconds to wait. */
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<ProblemDetail> tooManyRequests(TooManyRequestsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+                .body(problem(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage()));
+    }
+
+    /**
+     * We waited too long for a row lock (the lock_timeout set in OrderService), or PostgreSQL aborted us to break a
+     * deadlock. Both mean "someone else is busy with the same rows right now": a 409 the client may retry.
+     */
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    ProblemDetail lockContention(PessimisticLockingFailureException exception) {
+        return problem(HttpStatus.CONFLICT, "Those seats are busy right now. Please try again");
+    }
+
+    /** Two requests changed the same order at once (optimistic locking): the loser gets a 409 and may retry. */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ProblemDetail concurrentModification(OptimisticLockingFailureException exception) {
+        return problem(HttpStatus.CONFLICT, "The order was changed by another request. Please reload and try again");
     }
 
     /**

@@ -16,6 +16,10 @@ spring:
         # Lets tests COUNT the SQL statements Hibernate runs (used to prove there is no N+1 query problem).
         generate_statistics: true
   datasource:
+    hikari:
+      # A SMALL connection pool, like a modest server (or a 2-vCPU CI runner). With the default of 10, a concurrency
+      # bug that only appears when requests queue for connections could hide on a developer's machine.
+      maximum-pool-size: 5
     # A separate database, created by docker/postgres-init/01-create-test-db.sql, so tests never
     # touch development data.
     url: ${TEST_DATABASE_URL:jdbc:postgresql://localhost:5434/ticketing_test}
