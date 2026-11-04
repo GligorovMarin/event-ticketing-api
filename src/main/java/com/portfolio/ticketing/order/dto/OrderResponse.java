@@ -20,6 +20,8 @@ public record OrderResponse(
         int totalCents,
         Instant holdExpiresAt,
         Instant createdAt,
+        Instant paidAt,
+        Instant cancelledAt,
         List<Item> items) {
 
     /** One seat of the order: where it is, and the price it cost (copied at order time). */

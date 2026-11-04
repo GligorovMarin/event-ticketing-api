@@ -84,6 +84,23 @@ public class Order {
         return holdHasLapsed ? OrderStatus.EXPIRED : status;
     }
 
+    /** PENDING -> PAID. The caller has already taken the money and locked the order row. */
+    public void markPaid(Instant now) {
+        this.status = OrderStatus.PAID;
+        this.paidAt = now;
+    }
+
+    /** PENDING or PAID -> CANCELLED. */
+    public void markCancelled(Instant now) {
+        this.status = OrderStatus.CANCELLED;
+        this.cancelledAt = now;
+    }
+
+    /** PENDING -> EXPIRED, written down by the sweep (the status was already EXPIRED in effect, see effectiveStatus). */
+    public void markExpired() {
+        this.status = OrderStatus.EXPIRED;
+    }
+
     public UUID getId() {
         return id;
     }

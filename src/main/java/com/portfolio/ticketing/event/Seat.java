@@ -56,6 +56,19 @@ public class Seat {
         this.holdExpiresAt = expiresAt;
     }
 
+    /** HELD -> SOLD, once the order is paid. The order link stays: it says who the seat was sold to. */
+    public void sell() {
+        this.status = SeatStatus.SOLD;
+        this.holdExpiresAt = null;
+    }
+
+    /** Back on sale: the hold ended, or the order was cancelled. Clears the link to the order. */
+    public void release() {
+        this.status = SeatStatus.AVAILABLE;
+        this.orderId = null;
+        this.holdExpiresAt = null;
+    }
+
     /** The seat as a ticket names it: "C7". */
     public String label() {
         return rowLabel + seatNumber;

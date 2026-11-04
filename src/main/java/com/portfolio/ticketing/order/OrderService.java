@@ -152,6 +152,12 @@ public class OrderService {
         return toResponses(List.of(order), clock.instant()).getFirst();
     }
 
+    /** One order as a response, built at the current time. Used by OrderLifecycleService after pay / cancel. */
+    @Transactional(readOnly = true)
+    public OrderResponse respond(Order order) {
+        return toResponses(List.of(order), clock.instant()).getFirst();
+    }
+
     // ---- Building responses -----------------------------------------------------------------------
 
     /**
@@ -196,7 +202,7 @@ public class OrderService {
                     .toList();
 
             responses.add(new OrderResponse(order.getId(), order.getEventId(), eventsById.get(order.getEventId()).getName(),
-                    order.effectiveStatus(now), order.getTotalCents(), order.getHoldExpiresAt(), order.getCreatedAt(), itemResponses));
+                    order.effectiveStatus(now), order.getTotalCents(), order.getHoldExpiresAt(), order.getCreatedAt(), order.getPaidAt(), order.getCancelledAt(), itemResponses));
         }
         return responses;
     }

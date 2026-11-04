@@ -46,6 +46,11 @@ app:
     lifetime: 1h
   security:
     bcrypt-strength: 10
+  scheduling:
+    enabled: true
+  orders:
+    # How often the background job frees seats of orders whose hold ended (ISO-8601 duration: PT1M = 1 minute).
+    sweep-interval: PT1M
 
 server:
   port: ${PORT:8080}

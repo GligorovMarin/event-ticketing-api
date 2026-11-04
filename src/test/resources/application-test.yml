@@ -6,6 +6,9 @@
 app:
   security:
     bcrypt-strength: 4
+  scheduling:
+    # No background jobs during tests: they run the sweep explicitly (OrderExpirySweeper.sweepOnce()).
+    enabled: false
   jwt:
     secret: test-only-secret-test-only-secret-0123456789
 

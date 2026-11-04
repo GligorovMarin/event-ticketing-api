@@ -1,6 +1,8 @@
 package com.portfolio.ticketing.common;
 
 import jakarta.validation.ConstraintViolationException;
+import com.portfolio.ticketing.payment.PaymentDeclinedException;
+import com.portfolio.ticketing.payment.PaymentGatewayUnavailableException;
 import com.portfolio.ticketing.ratelimit.TooManyRequestsException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -51,6 +53,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     ProblemDetail invalidCredentials(InvalidCredentialsException exception) {
         return problem(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    }
+
+    /** The card was refused: 402 Payment Required. The order stays open, so the client may retry with another card. */
+    @ExceptionHandler(PaymentDeclinedException.class)
+    ProblemDetail paymentDeclined(PaymentDeclinedException exception) {
+        return problem(HttpStatus.PAYMENT_REQUIRED, exception.getMessage());
+    }
+
+    /** The payment provider is down: 503. Nothing was charged or refunded, and the client may retry. */
+    @ExceptionHandler(PaymentGatewayUnavailableException.class)
+    ProblemDetail paymentProviderDown(PaymentGatewayUnavailableException exception) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     }
 
     /** A rate limit was exceeded: 429 plus a Retry-After header telling the client how many seconds to wait. */

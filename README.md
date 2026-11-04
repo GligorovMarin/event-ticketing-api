@@ -41,7 +41,8 @@ Two roles, both open to self-registration (`POST /auth/register` with `"role": "
 | `GET /auth/me` | | yes | yes |
 | `GET /events`, `GET /events/{id}` (published events only) | yes | | |
 | `GET /events/{id}/seats`, `GET /events/{id}/seats/suggestions` | yes | | |
-| `POST /orders`, `GET /orders`, `GET /orders/{id}` | | | own orders (customers only) |
+| `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST /orders/{id}/pay`, `POST /orders/{id}/cancel` | | own orders (customers only) | |
+| `GET /organizer/events/{id}/sales` | | | own events |
 | `POST /events`, `POST /events/{id}/sections`, `POST /events/{id}/publish` | | | own events |
 | `GET /organizer/events`, `GET /organizer/events/{id}` (drafts included) | | | own events |
 
@@ -104,6 +105,36 @@ The concurrency tests fire 8 customers at one seat, 5 orders from one customer a
 then check invariants (no seat in two live orders, no orphaned holds, only `201` or `409` ever returned). They run
 against a deliberately small connection pool (5) because that is where concurrency bugs show up.
 
+### Paying, cancelling, expiring
+
+`POST /orders/{id}/pay` with a payment **token** (never card numbers: a real provider turns card details into a token on
+the customer's device, which keeps card data off this server). The provider sits behind a `PaymentGateway` interface
+(strategy pattern) with a `FakePaymentGateway`: `tok_ok` approves, `tok_declined` returns `402`, `tok_timeout` returns `503`
+with nothing charged. Every attempt is recorded in `payments`.
+
+- **Never charged twice.** The order row is locked while paying, paying an already paid order just returns it (a test fires
+  four simultaneous "pay" requests: one payment), and a **partial unique index** lets the database refuse a second
+  successful payment for an order whatever the code does.
+- **A declined card keeps the order open** (and the `DECLINED` attempt is kept: `noRollbackFor`); a provider outage rolls
+  everything back.
+- **One lock order everywhere:** the order row first, then its seats in ascending id. That is why pay, cancel, the expiry
+  sweep and ordering can never deadlock with one another (a test races "pay" against "cancel" 12 times).
+- `POST /orders/{id}/cancel`: a pending order any time; a paid order until **48 hours before the event**, refunded through
+  the gateway (if the refund fails the order stays paid). The seats go back on sale. Seats that another customer has taken
+  over since are never freed by mistake.
+- **Expiry sweep:** a `@Scheduled` job (every minute, `app.orders.sweep-interval`) frees the seats of orders whose hold ended.
+  Correctness never depends on it (lazy expiry already treats a lapsed hold as free); it keeps stored data and reports tidy.
+  It is safe on several servers at once and is switched off in tests, which run it explicitly.
+- **Known trade-off:** the gateway is called inside the database transaction, which is fine for a fast fake and wrong for
+  a slow real provider. The production pattern is "record intent, commit, call the provider with no locks held, record
+  the result", plus a reconciliation job; documented in `OrderLifecycleService`.
+
+### Sales report
+
+`GET /organizer/events/{id}/sales` is computed by the database with `GROUP BY` / `SUM` / `COUNT` (three queries, however big
+the event): capacity, sold, held, available, revenue (from the price copied at order time), orders by status and a
+per-section breakdown. `LEFT JOIN`s keep sections with no sales in the report.
+
 ### Rate limiting
 
 `POST /orders` allows **10 attempts per minute per customer** (`@RateLimited`); the 11th gets `429` with `Retry-After`.
@@ -136,6 +167,10 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
                                   security/    AuthenticatedUser: what controllers receive as "the caller"
                                   user/        User entity + UserRepository (maps the users table)
                                   order/       OrderController -> OrderService: lock seats in id order, check, hold, price
+                                               OrderLifecycleService: pay, cancel, expire (order row lock, then seat locks)
+                                               OrderExpirySweeper: the @Scheduled job
+                                  payment/     PaymentGateway interface + FakePaymentGateway; Payment (audit trail)
+                                  report/      SalesReportService: SQL aggregation for organizers
                                                Order (optimistic @Version), OrderItem, OrderRules (limits)
                                   ratelimit/   SlidingWindowRateLimiter, @RateLimited, the interceptor that applies it
                                   availability/ AvailabilityController -> AvailabilityService -> SeatRepository;
@@ -158,5 +193,5 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
 - [x] **M3** Events and seat maps (organizer builds a draft, publishes it; public browsing with paging and search)
 - [x] **M4** Seat availability (live status, lazy hold expiry) and the "find N seats together" algorithm
 - [x] **M5** Seat holds, orders (pessimistic locking) and a sliding-window rate limiter
-- [ ] M6 Simulated payment, hold expiry, cancellation, sales report
+- [x] **M6** Simulated payment, hold expiry sweep, cancellation with refunds, organizer sales report
 - [ ] M7 Final documentation

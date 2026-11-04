@@ -2,6 +2,7 @@ package com.portfolio.ticketing.order;
 
 import com.portfolio.ticketing.order.dto.CreateOrderRequest;
 import com.portfolio.ticketing.order.dto.OrderResponse;
+import com.portfolio.ticketing.order.dto.PayOrderRequest;
 import com.portfolio.ticketing.ratelimit.RateLimited;
 import com.portfolio.ticketing.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,6 +28,8 @@ import java.util.UUID;
  *   POST /orders        hold seats for 10 minutes (rate limited: 10 attempts per minute per customer)
  *   GET  /orders        my orders, newest first
  *   GET  /orders/{id}   one of my orders
+ *   POST /orders/{id}/pay      pay for a pending order (rate limited: 5 attempts per minute)
+ *   POST /orders/{id}/cancel   cancel it; a paid order is refunded, until 48 hours before the event
  * </pre>
  */
 @RestController
@@ -36,9 +39,11 @@ import java.util.UUID;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderLifecycleService lifecycleService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, OrderLifecycleService lifecycleService) {
         this.orderService = orderService;
+        this.lifecycleService = lifecycleService;
     }
 
     @PostMapping
@@ -61,5 +66,23 @@ public class OrderController {
     @Operation(summary = "One of my orders")
     public OrderResponse get(AuthenticatedUser customer, @PathVariable UUID id) {
         return orderService.getMine(customer, id);
+    }
+
+    @PostMapping("/{id}/pay")
+    // Paying CHANGES an existing order rather than creating one, so 200 OK (not 201).
+    @RateLimited(limit = OrderRules.PAYMENT_ATTEMPTS_PER_MINUTE, windowSeconds = 60)
+    @Operation(summary = "Pay for a pending order",
+            description = "Send a payment token: tok_ok (approved), tok_declined (402, try again with another), "
+                    + "tok_timeout (503, nothing charged). Paying an already paid order returns it without charging again.")
+    public OrderResponse pay(AuthenticatedUser customer, @PathVariable UUID id, @Valid @RequestBody PayOrderRequest request) {
+        return lifecycleService.pay(customer, id, request.paymentToken());
+    }
+
+    @PostMapping("/{id}/cancel")
+    @Operation(summary = "Cancel an order",
+            description = "A pending order can be cancelled any time. A paid order only until 48 hours before the event, "
+                    + "and it is refunded. The seats go back on sale.")
+    public OrderResponse cancel(AuthenticatedUser customer, @PathVariable UUID id) {
+        return lifecycleService.cancel(customer, id);
     }
 }

@@ -25,6 +25,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  *   event/     events, sections (priced seat blocks) and seats; organizer writes, public browsing
  *   availability/  seat map with live status, and the "find N seats together" algorithm
  *   order/     orders: hold seats for 10 minutes (pessimistic row locks), OrderRules (limits, hold duration)
+ *   payment/   PaymentGateway (strategy interface) + FakePaymentGateway; every attempt recorded in payments
+ *   report/    the organizer sales report (SQL aggregation)
  *   ratelimit/ sliding-window rate limiter, @RateLimited and the interceptor that applies it
  *   common/    shared exceptions and the one place that turns them into HTTP responses
  * </pre>

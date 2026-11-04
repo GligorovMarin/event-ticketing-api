@@ -8,6 +8,8 @@ import java.util.UUID;
 
 public interface OrderItemRepository extends JpaRepository<OrderItem, UUID> {
 
+    List<OrderItem> findByOrderId(UUID orderId);
+
     /** The items of MANY orders in one query (used to show a list of orders without N+1 queries). */
     List<OrderItem> findByOrderIdIn(Collection<UUID> orderIds);
 }
