@@ -7,7 +7,19 @@ customers pick seats, the seats are **held for 10 minutes** while they pay, and 
 that someone else holds, even when thousands click at once. Built with **Java 21, Spring Boot 4 and
 PostgreSQL**, fully containerised with Docker.
 
-> Work in progress: built milestone by milestone. See [Roadmap](#roadmap).
+## Features
+
+- **Events and seat maps:** organizers build a draft with priced sections (rows x seats), then publish; the seat
+  map freezes. Public browsing with paging and search.
+- **"Find N seats together":** an O(S) algorithm finds the best block of adjacent free seats in a row.
+- **Concurrency-safe ordering:** seats are held for 10 minutes using pessimistic row locks taken in a fixed order;
+  two customers can never get the same seat, and the database enforces it as well.
+- **Payment (simulated):** behind a `PaymentGateway` interface; never charges twice; declined cards keep the
+  order open; paid orders can be cancelled until 48 hours before the event and are refunded.
+- **Rate limiting:** a sliding-window limiter on ordering and paying.
+- **Housekeeping:** a scheduled job frees expired holds (correctness never depends on it).
+- **Organizer sales report:** revenue, sold and held seats and per-section figures, computed with SQL aggregation.
+- **Security:** JWT login, roles, everything locked unless explicitly public; uniform RFC 9457 error documents.
 
 ## Tech stack
 
@@ -29,6 +41,16 @@ Nothing needs to be installed except **Docker**.
 docker compose up -d --build        # API on http://localhost:8080, Swagger UI on /docs
 docker compose down -v              # stop and wipe the database
 ```
+
+### Try it in 2 minutes (Swagger UI at `/docs`)
+
+1. `POST /auth/register` as an **ORGANIZER**, then `POST /auth/login`, copy the `accessToken`, click **Authorize**.
+2. `POST /events` (a `startsAt` in the future), `POST /events/{id}/sections` (e.g. 3 rows x 6 seats, `priceCents` 5000),
+   `POST /events/{id}/publish`.
+3. Register and log in as a **CUSTOMER** (Authorize again). `GET /events/{id}/seats/suggestions?sectionId=...&count=3`
+   suggests seats together; `POST /orders` with those seat ids holds them for 10 minutes.
+4. `POST /orders/{id}/pay` with `{"paymentToken": "tok_ok"}` (`tok_declined` and `tok_timeout` show the failure paths).
+5. As the organizer: `GET /organizer/events/{id}/sales`.
 
 ## Accounts and permissions
 
@@ -146,9 +168,14 @@ server's memory (several servers would each count separately; a shared store suc
 ## Running the tests
 
 ```bash
-docker compose run --rm api mvn -B test      # unit tests only (fast, no database)
-docker compose run --rm api mvn -B verify    # unit + integration tests (real PostgreSQL, separate ticketing_test database)
+docker compose run --rm api mvn -B test      # 99 unit tests (fast, no database)
+docker compose run --rm api mvn -B verify    # unit + 182 integration tests (real PostgreSQL, separate ticketing_test database)
 ```
+
+The concurrency tests start many threads together behind a latch and then check **invariants** (no seat in two live
+orders, no orphaned holds, only `201` or `409` ever returned). They run against a deliberately small connection pool (5),
+because queueing for connections is where concurrency bugs surface. Time-dependent rules (10-minute holds, 48-hour
+cancellation window, the rate limit) use an injectable `Clock`, so tests move time instead of waiting.
 
 Integration tests never touch development data: they use their own database, created by `docker/postgres-init/`.
 
@@ -186,12 +213,28 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
           src/test/java/**/*IT.java    integration tests (@IntegrationTest: real app + real PostgreSQL)
 ```
 
-## Roadmap
+## Configuration
 
-- [x] **M1** Project skeleton, Docker, Flyway, test setup, CI
-- [x] **M2** Users, JWT login, roles (Customer / Organizer), everything locked by default
-- [x] **M3** Events and seat maps (organizer builds a draft, publishes it; public browsing with paging and search)
-- [x] **M4** Seat availability (live status, lazy hold expiry) and the "find N seats together" algorithm
-- [x] **M5** Seat holds, orders (pessimistic locking) and a sliding-window rate limiter
-- [x] **M6** Simulated payment, hold expiry sweep, cancellation with refunds, organizer sales report
-- [ ] M7 Final documentation
+Set in `docker-compose.yml` (development values only). In production they come from a secrets manager.
+
+| Variable | Purpose | Dev value |
+|---|---|---|
+| `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` | PostgreSQL connection | `jdbc:postgresql://db:5432/ticketing` |
+| `TEST_DATABASE_URL` | Separate database for the integration tests | `.../ticketing_test` |
+| `JWT_SECRET` | Signs login tokens. Required, at least 32 characters: the application refuses to start without it | dev-only placeholder |
+| `APP_ORDERS_SWEEP_INTERVAL` | How often the expiry job runs (ISO-8601 duration) | `PT1M` |
+| `APP_SCHEDULING_ENABLED` | Switches background jobs on or off | `true` |
+| `PORT` | HTTP port | `8080` |
+
+## Known limitations
+
+Deliberate scope decisions, not oversights:
+
+- **Simulated payments.** `FakePaymentGateway` stands in for a provider. The gateway is called inside the database
+  transaction (fine for a fast fake; a real provider needs the "record intent, commit, call, record result" pattern
+  plus reconciliation, described in `OrderLifecycleService`).
+- **In-memory rate limiter.** Counters live in one server's memory; several servers would each count separately, so a shared
+  store such as Redis would be needed.
+- **No e-mail or notifications**, no refresh tokens or password change, no organizer-initiated event cancellation.
+- **One currency, whole cents.** No tax, fees or discounts.
+- **Seat maps are rectangular.** Rows A to Z, up to 50 seats per row, 5000 seats per event.
