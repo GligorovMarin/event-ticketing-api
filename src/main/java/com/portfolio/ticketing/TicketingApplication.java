@@ -23,6 +23,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  *   auth/      register, login, JWT creation
  *   user/      the users table (entity + repository)
  *   event/     events, sections (priced seat blocks) and seats; organizer writes, public browsing
+ *   availability/  seat map with live status, and the "find N seats together" algorithm
+ *   order/     the business rules of buying (limits, hold duration); orders themselves come next
  *   common/    shared exceptions and the one place that turns them into HTTP responses
  * </pre>
  */

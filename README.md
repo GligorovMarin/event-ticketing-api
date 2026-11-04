@@ -40,6 +40,7 @@ Two roles, both open to self-registration (`POST /auth/register` with `"role": "
 | `GET /actuator/health`, `/docs`, `POST /auth/register`, `POST /auth/login` | yes | | |
 | `GET /auth/me` | | yes | yes |
 | `GET /events`, `GET /events/{id}` (published events only) | yes | | |
+| `GET /events/{id}/seats`, `GET /events/{id}/seats/suggestions` | yes | | |
 | `POST /events`, `POST /events/{id}/sections`, `POST /events/{id}/publish` | | | own events |
 | `GET /organizer/events`, `GET /organizer/events/{id}` (drafts included) | | | own events |
 
@@ -62,6 +63,24 @@ event on sale and **freezes the seat map**, so seats never appear or vanish unde
 - The public listing (`GET /events?q=&page=&size=`) shows upcoming published events, soonest first, and fetches
   every event's cheapest price with one grouped query (no N+1; a test counts the SQL statements).
 - Search text goes through a bound parameter (no SQL injection) and `%` / `_` are escaped, so they are plain characters.
+
+## Seat availability and "find N seats together"
+
+`GET /events/{id}/seats` returns the whole seat map (sections, rows, seats) with each seat's **current** status.
+A seat whose hold has run out is shown as available even if no background job has cleaned the row yet
+("lazy expiry"), so the answer is right regardless of when cleanup runs. Who holds or bought a seat is never exposed.
+
+`GET /events/{id}/seats/suggestions?sectionId=&count=4` finds the best block of N **adjacent** free seats in one row
+(`AdjacentSeatFinder`, a pure function):
+
+1. rows are tried front to back, and the first row with any block wins;
+2. inside that row, the block whose middle is closest to the middle of the row;
+3. on a tie, the leftmost.
+
+It builds a **prefix-sum array** of unavailable seats per row, so "are seats i..i+N-1 all free?" is two array reads.
+Sliding the window along a row is O(1) per position, so the whole search is **O(S)** for S seats in the section
+(a naive re-check of N seats per position would be O(S x N)). The unit tests compare it with a brute-force version
+on 2000 random seat maps.
 
 ## Running the tests
 
@@ -86,6 +105,9 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
                                                JwtService signs tokens; JwtConfig builds the verifier Spring Security uses
                                   security/    AuthenticatedUser: what controllers receive as "the caller"
                                   user/        User entity + UserRepository (maps the users table)
+                                  availability/ AvailabilityController -> AvailabilityService -> SeatRepository;
+                                               AdjacentSeatFinder (the algorithm), SeatView (lazy expiry)
+                                  order/       OrderRules: limits shared by availability and (next) ordering
                                   event/       EventController (public + organizer writes) -> EventService
                                                -> EventRepository / SectionRepository; SeatMapService batch-inserts seats;
                                                SeatMapLayout = pure rules about rows and seat numbering
@@ -102,7 +124,7 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
 - [x] **M1** Project skeleton, Docker, Flyway, test setup, CI
 - [x] **M2** Users, JWT login, roles (Customer / Organizer), everything locked by default
 - [x] **M3** Events and seat maps (organizer builds a draft, publishes it; public browsing with paging and search)
-- [ ] M4 Seat availability and the "find N seats together" algorithm
+- [x] **M4** Seat availability (live status, lazy hold expiry) and the "find N seats together" algorithm
 - [ ] M5 Seat holds, orders and a rate limiter
 - [ ] M6 Simulated payment, hold expiry, cancellation, sales report
 - [ ] M7 Final documentation
