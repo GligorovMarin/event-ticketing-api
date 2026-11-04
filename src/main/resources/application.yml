@@ -31,6 +31,22 @@ spring:
     problemdetails:
       enabled: true
 
+  # Reject JSON with fields we do not know ({"email":..., "role":"ADMIN", "isAdmin":true}) instead of silently
+  # ignoring them: a typo in a field name then fails loudly, and a client cannot smuggle extra data in.
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+# Our own settings (read by the classes annotated @ConfigurationProperties / @Value).
+app:
+  jwt:
+    # No default on purpose: the app must not start with a guessable secret. JwtProperties checks the length.
+    secret: ${JWT_SECRET:}
+    issuer: event-ticketing-api
+    lifetime: 1h
+  security:
+    bcrypt-strength: 10
+
 server:
   port: ${PORT:8080}
 

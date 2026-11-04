@@ -2,6 +2,7 @@ package com.portfolio.ticketing;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * The entry point: {@code mvn spring-boot:run} (see the Dockerfile) starts this class.
@@ -17,10 +18,16 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  * <p>Where things live (packages below this one are added milestone by milestone):
  * <pre>
- *   config/   security, OpenAPI documentation
+ *   config/    security rules, web wiring, OpenAPI documentation
+ *   security/  the AuthenticatedUser that controllers receive
+ *   auth/      register, login, JWT creation
+ *   user/      the users table (entity + repository)
+ *   common/    shared exceptions and the one place that turns them into HTTP responses
  * </pre>
  */
 @SpringBootApplication
+// Finds classes annotated @ConfigurationProperties (like auth/JwtProperties) and fills them from application.yml.
+@ConfigurationPropertiesScan
 public class TicketingApplication {
 
     public static void main(String[] args) {

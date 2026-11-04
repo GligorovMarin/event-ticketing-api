@@ -2,6 +2,13 @@
 # (the integration tests activate it with @ActiveProfiles("test"), see the IntegrationTest annotation).
 # They override application.yml.
 
+# Cheapest possible bcrypt: tests create many accounts and must stay fast.
+app:
+  security:
+    bcrypt-strength: 4
+  jwt:
+    secret: test-only-secret-test-only-secret-0123456789
+
 spring:
   datasource:
     # A separate database, created by docker/postgres-init/01-create-test-db.sql, so tests never

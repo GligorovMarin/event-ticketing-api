@@ -1,11 +1,13 @@
 package com.portfolio.ticketing.config;
 
+import com.portfolio.ticketing.security.AuthenticatedUser;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
+import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -16,6 +18,12 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 public class OpenApiConfig {
+
+    static {
+        // Controllers declare a parameter of type AuthenticatedUser to receive the caller; it is filled from the
+        // token, NOT from the request, so it must not appear in the documentation as something to send.
+        SpringDocUtils.getConfig().addRequestWrapperToIgnore(AuthenticatedUser.class);
+    }
 
     private static final String BEARER_SCHEME = "bearerAuth";
 

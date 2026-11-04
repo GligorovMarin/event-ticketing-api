@@ -30,6 +30,21 @@ docker compose up -d --build        # API on http://localhost:8080, Swagger UI o
 docker compose down -v              # stop and wipe the database
 ```
 
+## Accounts and permissions
+
+Two roles, both open to self-registration (`POST /auth/register` with `"role": "CUSTOMER"` or `"ORGANIZER"`):
+**customers** buy tickets; **organizers** create events and see the sales of their own events.
+
+| Endpoint | Public | Customer | Organizer |
+|---|:-:|:-:|:-:|
+| `GET /actuator/health`, `/docs`, `POST /auth/register`, `POST /auth/login` | yes | | |
+| `GET /auth/me` | | yes | yes |
+
+Missing, forged, tampered or expired token -> `401`. Valid token but wrong role -> `403`. Every error is an
+RFC 9457 problem-details JSON document. Everything not listed as public is locked by default.
+
+In Swagger (`/docs`): call `POST /auth/login`, copy `accessToken`, click **Authorize**, paste it.
+
 ## Running the tests
 
 ```bash
@@ -46,8 +61,14 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
         │
         └──builds (Dockerfile)──> api (Spring Boot)
                                     │
-  TicketingApplication ──scans──> config/SecurityConfig   (who may call what; locked by default)
+  TicketingApplication ──scans──> config/SecurityConfig   (who may call what; locked by default; bcrypt bean)
+                                  config/WebConfig        (Clock bean, AuthenticatedUser parameter resolver)
                                   config/OpenApiConfig    (Swagger UI text and Authorize button)
+                                  auth/        AuthController -> AuthService -> UserRepository (users table)
+                                               JwtService signs tokens; JwtConfig builds the verifier Spring Security uses
+                                  security/    AuthenticatedUser: what controllers receive as "the caller"
+                                  user/        User entity + UserRepository (maps the users table)
+                                  common/      exceptions + ApiExceptionHandler (all errors become problem-details JSON)
                                   resources/application.yml        (settings)
                                   resources/db/migration/V*.sql    (Flyway: the database schema)
 
@@ -58,7 +79,7 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
 ## Roadmap
 
 - [x] **M1** Project skeleton, Docker, Flyway, test setup, CI
-- [ ] M2 Users, JWT login, roles (Customer / Organizer)
+- [x] **M2** Users, JWT login, roles (Customer / Organizer), everything locked by default
 - [ ] M3 Events and seat maps
 - [ ] M4 Seat availability and the "find N seats together" algorithm
 - [ ] M5 Seat holds, orders and a rate limiter
