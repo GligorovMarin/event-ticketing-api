@@ -22,6 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  *   security/  the AuthenticatedUser that controllers receive
  *   auth/      register, login, JWT creation
  *   user/      the users table (entity + repository)
+ *   event/     events, sections (priced seat blocks) and seats; organizer writes, public browsing
  *   common/    shared exceptions and the one place that turns them into HTTP responses
  * </pre>
  */

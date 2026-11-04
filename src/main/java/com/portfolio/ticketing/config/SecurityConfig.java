@@ -54,6 +54,12 @@ public class SecurityConfig {
     /** Public endpoints that only accept POST (creating an account and logging in). */
     private static final String[] PUBLIC_POST_PATHS = {"/auth/register", "/auth/login"};
 
+    /**
+     * Public endpoints that only accept GET: anyone may BROWSE events and their seat availability without an
+     * account. Only reading is public; creating, publishing and ordering all need a login.
+     */
+    private static final String[] PUBLIC_GET_PATHS = {"/events", "/events/**"};
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -68,6 +74,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, PUBLIC_POST_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
                         // Default deny: everything not listed above needs a valid token.
                         .anyRequest().authenticated())
 

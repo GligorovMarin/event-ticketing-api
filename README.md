@@ -39,11 +39,29 @@ Two roles, both open to self-registration (`POST /auth/register` with `"role": "
 |---|:-:|:-:|:-:|
 | `GET /actuator/health`, `/docs`, `POST /auth/register`, `POST /auth/login` | yes | | |
 | `GET /auth/me` | | yes | yes |
+| `GET /events`, `GET /events/{id}` (published events only) | yes | | |
+| `POST /events`, `POST /events/{id}/sections`, `POST /events/{id}/publish` | | | own events |
+| `GET /organizer/events`, `GET /organizer/events/{id}` (drafts included) | | | own events |
 
 Missing, forged, tampered or expired token -> `401`. Valid token but wrong role -> `403`. Every error is an
 RFC 9457 problem-details JSON document. Everything not listed as public is locked by default.
 
 In Swagger (`/docs`): call `POST /auth/login`, copy `accessToken`, click **Authorize**, paste it.
+
+## Events and seat maps
+
+An organizer builds an event as a **draft**: `POST /events`, then one or more **sections**
+(`POST /events/{id}/sections` with `rows`, `seatsPerRow` and a price in cents). The server generates the seats
+(rows A to Z, seats numbered from 1) with a single JDBC batch insert. `POST /events/{id}/publish` puts the
+event on sale and **freezes the seat map**, so seats never appear or vanish under customers.
+
+- A section and all its seats are created in one transaction: all or nothing.
+- Organizer writes lock the event row (`SELECT ... FOR UPDATE`), so "publish" cannot race with "add section".
+- Another organizer's event looks exactly like a missing one (`404`, never `403`).
+- Money is stored as integer cents, never as a decimal number.
+- The public listing (`GET /events?q=&page=&size=`) shows upcoming published events, soonest first, and fetches
+  every event's cheapest price with one grouped query (no N+1; a test counts the SQL statements).
+- Search text goes through a bound parameter (no SQL injection) and `%` / `_` are escaped, so they are plain characters.
 
 ## Running the tests
 
@@ -68,6 +86,9 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
                                                JwtService signs tokens; JwtConfig builds the verifier Spring Security uses
                                   security/    AuthenticatedUser: what controllers receive as "the caller"
                                   user/        User entity + UserRepository (maps the users table)
+                                  event/       EventController (public + organizer writes) -> EventService
+                                               -> EventRepository / SectionRepository; SeatMapService batch-inserts seats;
+                                               SeatMapLayout = pure rules about rows and seat numbering
                                   common/      exceptions + ApiExceptionHandler (all errors become problem-details JSON)
                                   resources/application.yml        (settings)
                                   resources/db/migration/V*.sql    (Flyway: the database schema)
@@ -80,7 +101,7 @@ docker-compose.yml ──starts──> db (PostgreSQL)  <── docker/postgres-
 
 - [x] **M1** Project skeleton, Docker, Flyway, test setup, CI
 - [x] **M2** Users, JWT login, roles (Customer / Organizer), everything locked by default
-- [ ] M3 Events and seat maps
+- [x] **M3** Events and seat maps (organizer builds a draft, publishes it; public browsing with paging and search)
 - [ ] M4 Seat availability and the "find N seats together" algorithm
 - [ ] M5 Seat holds, orders and a rate limiter
 - [ ] M6 Simulated payment, hold expiry, cancellation, sales report

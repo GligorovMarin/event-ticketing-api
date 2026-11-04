@@ -10,6 +10,11 @@ app:
     secret: test-only-secret-test-only-secret-0123456789
 
 spring:
+  jpa:
+    properties:
+      hibernate:
+        # Lets tests COUNT the SQL statements Hibernate runs (used to prove there is no N+1 query problem).
+        generate_statistics: true
   datasource:
     # A separate database, created by docker/postgres-init/01-create-test-db.sql, so tests never
     # touch development data.

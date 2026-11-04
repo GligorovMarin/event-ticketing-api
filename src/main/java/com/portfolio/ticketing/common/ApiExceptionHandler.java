@@ -1,5 +1,6 @@
 package com.portfolio.ticketing.common;
 
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -47,6 +48,20 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     ProblemDetail invalidCredentials(InvalidCredentialsException exception) {
         return problem(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    }
+
+    /**
+     * Bean Validation failed somewhere that is not a request body (for example a @Valid argument of a service
+     * method). It is a caller error, so 400, never a 500.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    ProblemDetail constraintViolation(ConstraintViolationException exception) {
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "The request has invalid values");
+        Map<String, String> errors = new LinkedHashMap<>();
+        exception.getConstraintViolations().forEach(violation -> errors.putIfAbsent(
+                violation.getPropertyPath().toString(), violation.getMessage()));
+        problem.setProperty("errors", errors);
+        return problem;
     }
 
     /** Thrown by @PreAuthorize and by our own ownership checks: logged in, but not allowed (403). */
